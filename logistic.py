@@ -26,9 +26,9 @@ class RaceModel:
         # Determine the target (which horse is leading)
         # This is a simple way to assign the target where the horse with the least distance to finish is considered leading
         self.target = np.zeros(self.num_horses)
-        self.target[np.argmin(remaining_distances)] = 1  # Mark the leading horse
+        self.target[np.argmin(remaining_distances)] = 1
 
-        # Fit the model if there's enough class variation
+        # enough class variation => fit the model
         if len(np.unique(self.target)) >= 2:
             self.model.fit(self.features, self.target)
             self.model_fitted = True

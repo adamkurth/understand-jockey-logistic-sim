@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from logistic import RaceModel
 
-# Define constants
+# constants
 num_horses = 10
 num_laps = 3
 race_dist = num_laps * 2 * np.pi  # 2pi * radius
@@ -26,10 +26,11 @@ ax_race.set_aspect('equal')  # ensure no distortion
 fig_leaderboard, ax_leaderboard = plt.subplots()
 ax_leaderboard.axis('off')
 
-
 colors = plt.cm.rainbow(np.linspace(0, 1, num_horses))
 points = [ax_race.plot([], [], 'o', color=colors[i])[0] for i in range(num_horses)]
-leaderboard_texts = [ax_leaderboard.text(0.5, 0.95 - 0.05 * i, '', verticalalignment='top', horizontalalignment='center') for i in range(num_horses)]
+leaderboard_texts = [ax_leaderboard.text(0.1, 0.95 - 0.05 * i, '', verticalalignment='top') for i in range(num_horses)]
+features_text = ax_leaderboard.text(0.5, 0.5, '', verticalalignment='center', horizontalalignment='left', fontsize=8)
+targets_text = ax_leaderboard.text(0.8, 0.5, '', verticalalignment='center', horizontalalignment='left', fontsize=8)
 
 def track(angle):
     """Calculate the x,y coordinates for an angle on the track"""
@@ -45,11 +46,9 @@ def init():
 
 def update(frame):
     global horse_positions, horse_speeds
-
     # Check if the leading horse has completed the number of laps
     leading_horse_dist = np.max(horse_positions)
     if leading_horse_dist >= race_dist:
-        # Freeze the frames by returning the current state without updating positions or probabilities
         for txt in leaderboard_texts:
             txt.set_text(txt.get_text())  # Freeze leaderboard texts
         return points + leaderboard_texts
@@ -58,13 +57,25 @@ def update(frame):
 
     # Update the race model and predict probabilities
     race_model.update_model(horse_positions, horse_speeds)
-    probabilities = race_model.predict_probabilities()
+    
+    if race_model.model_fitted:
+        probabilities = race_model.predict_probabilities()
+        sorted_indices = np.argsort(-probabilities[:, 1])
+        for i, idx in enumerate(sorted_indices[::-1]):  # Reversed for top to bottom display
+            prob = probabilities[idx, 1] if probabilities is not None else "N/A"
+            leaderboard_texts[i].set_text(f"Rank {i+1}: Horse {idx+1} - {prob:.2f}")
+            leaderboard_texts[i].set_color(colors[idx])
 
-    sorted_indices = np.argsort(-probabilities[:, 1])
-    for i, idx in enumerate(sorted_indices):
-        prob = probabilities[idx, 1] if probabilities is not None else "N/A"
-        leaderboard_texts[i].set_text(f"Rank {i+1}: Horse {idx} - {prob:.4f}")
-        leaderboard_texts[i].set_color(colors[idx])
+    # Update features text
+    if race_model.features is not None:
+        features_str = 'Features Matrix:\n' + np.array2string(race_model.features, precision=2)
+        features_text.set_text(features_str)
+
+    # Update targets text
+    if race_model.target is not None:
+        targets_str = 'Targets Vector:\n' + np.array2string(race_model.target)
+        targets_text.set_text(targets_str)
+
 
     for i, point in enumerate(points):
         x, y = track(horse_positions[i])
@@ -75,7 +86,7 @@ def update(frame):
     if np.max(horse_positions) >= race_dist:
         plt.close('all')
 
-    return points
+    return points + leaderboard_texts + [features_text, targets_text]
 
 
 ani = FuncAnimation(fig_race, update, frames=np.linspace(0, race_dist, 1200), init_func=init, blit=True, interval=10)
