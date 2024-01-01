@@ -10,37 +10,33 @@ class RaceModel:
         self.target = None
         self.model_fitted = False
         
+    def calculate_remaining_distances(self, positions, race_length=2 * np.pi):
+        """Calculate the remaining distance for each horse to the finish line."""
+        # Assuming positions are given as the angle on a circular track (0 to 2π)
+        # The finish line corresponds to 2π (complete a lap)
+        remaining_distances = (race_length - positions) % race_length
+        return remaining_distances
+    
     def update_model(self, positions, speeds):
-        # prepare featuress for each horse compared to other horses
-        num_features_per_horse = 2 * (self.num_horses - 1)
-        self.features = np.zeros((self.num_horses, num_features_per_horse))
+        """Update the model with the current positions and speeds of the horses."""
+        # Calculate features
+        remaining_distances = self.calculate_remaining_distances(positions)
+        self.features = np.vstack((remaining_distances, speeds)).T
 
-        for i in range(self.num_horses):
-            features = []
-            for j in range(self.num_horses):
-                if i != j:
-                    features.extend([(positions[i] - positions[j]), (speeds[i] - speeds[j])])
-            
-            self.features[i] = features
-        
-        # determine the leading horse
-        leading_horse = np.argmin(positions)
-        self.target = np.full(self.num_horses, 0)  # Initialize all as non-leaders
-        self.target[leading_horse] = 1  # Leading horse
-            
-        # fit the model
+        # Determine the target (which horse is leading)
+        # This is a simple way to assign the target where the horse with the least distance to finish is considered leading
+        self.target = np.zeros(self.num_horses)
+        self.target[np.argmin(remaining_distances)] = 1  # Mark the leading horse
+
+        # Fit the model if there's enough class variation
         if len(np.unique(self.target)) >= 2:
             self.model.fit(self.features, self.target)
             self.model_fitted = True
-        else:
-            if not self.model_fitted:
-                print("Not enough class variation for training. Assigning random targets for initial diversity.")
-                self.target = np.random.randint(0, 2, self.num_horses)
                 
     def predict_probabilities(self):
+        """Predict the winning probabilities for each horse."""
         if self.model_fitted:
             return self.model.predict_proba(self.features)
         else:
-            print("Model not fitted yet. Can't predict probabilities.")
-            return np.full((self.num_horses, 2), 1 / self.num_horses)
+            return None
         
