@@ -23,7 +23,7 @@ Such that:
 
 In logistic regression, typically trying to model the probability that a given input point belongs to certain cases (horse wins). The probability that an outcome will occur is modeled as a linear function of combination of predictor variables.
 
-$$P(Y=1 | X) = \frac{1}{1+\operatorname{exp}(-(β_0 + \beta_1X_1 + ⋯ + \beta_nX_n))}$$
+$$P(Y=1 | X) = \frac{1}{1+\exp(-(β_0 + \beta_1X_1 + ⋯ + \beta_nX_n))}$$
 
 Such that: 
 
