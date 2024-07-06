@@ -1,9 +1,3 @@
----
-runme:
-  id: 01HK3JJKRMHBBEVF67TH422A1N
-  version: v2.0
----
-
 # Logistic Regression in Horse Racing Prediction
 
 ### Introduction
