@@ -1,13 +1,65 @@
 # Generalized Linear Models for Race Simulation: Technical Specification
 
 ## Table of Contents
-1. [Introduction](#introduction)
-2. [Binary Logistic Regression](#binary-logistic-regression)
-3. [Multinomial Logistic Regression](#multinomial-logistic-regression)
-4. [Conditional Logistic Regression](#conditional-logistic-regression)
-5. [Estimation Theory](#estimation-theory)
-6. [Model Diagnostics](#model-diagnostics)
-7. [Implementation Considerations](#implementation-considerations)
+1. [Quick Start](#quick-start)
+2. [Introduction](#introduction)
+3. [Binary Logistic Regression](#binary-logistic-regression)
+4. [Multinomial Logistic Regression](#multinomial-logistic-regression)
+5. [Conditional Logistic Regression](#conditional-logistic-regression)
+6. [Estimation Theory](#estimation-theory)
+7. [Model Diagnostics](#model-diagnostics)
+8. [Implementation Considerations](#implementation-considerations)
+
+---
+
+## Quick Start
+
+### Running the Simulation
+
+This project implements a horse race simulation with real-time win probability estimation using GLM/IRLS (Iteratively Reweighted Least Squares).
+
+#### Prerequisites
+
+Install the required R packages:
+
+```r
+install.packages(c("shiny", "ggplot2", "dplyr", "tidyr", "scales"))
+```
+
+#### Launch the Application
+
+```bash
+# From the terminal
+cd /path/to/understand-jockey-logistic-sim
+Rscript -e "shiny::runApp('app.R')"
+```
+
+Or from within R/RStudio:
+
+```r
+setwd("/path/to/understand-jockey-logistic-sim")
+shiny::runApp("app.R")
+```
+
+### Project Structure
+
+| File | Description |
+|------|-------------|
+| `logistic.r` | Core GLM/IRLS engine implementing binary, multinomial, and conditional logistic regression |
+| `app.R` | Shiny application with animated race visualization |
+| `README.md` | This technical specification document |
+| `GLM_TECHNICAL_SPECIFICATION.md` | Detailed mathematical derivations |
+
+### Features
+
+- **Real-time IRLS computation** — Watch the Newton-Raphson iterations converge
+- **Multiple model types**:
+  - Binary logistic (lead horse probability)
+  - Multinomial logit (softmax over all horses)
+  - Conditional logit (McFadden's choice model)
+- **Animated race track** — Horses move on an elliptical track
+- **Live probability updates** — Bar chart showing win probabilities
+- **Mathematical output** — View coefficients, standard errors, deviance, and more
 
 ---
 
