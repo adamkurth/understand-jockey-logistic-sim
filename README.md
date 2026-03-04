@@ -48,7 +48,6 @@ shiny::runApp("app.R")
 | `logistic.r` | Core GLM/IRLS engine implementing binary, multinomial, and conditional logistic regression |
 | `app.R` | Shiny application with animated race visualization |
 | `README.md` | This technical specification document |
-| `GLM_TECHNICAL_SPECIFICATION.md` | Detailed mathematical derivations |
 
 ### Features
 

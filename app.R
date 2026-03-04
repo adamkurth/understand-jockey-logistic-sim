@@ -103,18 +103,25 @@ ui <- fluidPage(
                   min = 3, max = 15, value = 8, step = 1),
       
       sliderInput("n_laps", "Number of Laps:",
-                  min = 1, max = 5, value = 3, step = 1),
+                  min = 1, max = 5, value = 2, step = 1),
       
-      sliderInput("speed_var", "Speed Variation:",
-                  min = 0.001, max = 0.01, value = 0.003, step = 0.001),
+      sliderInput("competitiveness", "🔥 Competitiveness:",
+                  min = 0, max = 1, value = 0.8, step = 0.1,
+                  post = " (higher = more lead changes)"),
+      
+      sliderInput("speed_var", "Base Ability Spread:",
+                  min = 0.001, max = 0.01, value = 0.004, step = 0.001),
       
       sliderInput("animation_speed", "Animation Speed (ms):",
-                  min = 20, max = 200, value = 50, step = 10),
+                  min = 5, max = 100, value = 20, step = 5),
       
       hr(),
       
       actionButton("start_btn", "🏁 Start Race", 
                    class = "btn-primary btn-block"),
+      
+      actionButton("fast_btn", "⚡ Turbo Race (5ms)", 
+                   class = "btn-warning btn-block"),
       
       actionButton("reset_btn", "🔄 Reset", 
                    class = "btn-secondary btn-block"),
@@ -228,25 +235,44 @@ server <- function(input, output, session) {
     rv$irls_info <- ""
   })
   
-  # Start race
+  # Helper function to start a race
+  start_new_race <- function(turbo = FALSE) {
+    # Generate new race with competitive dynamics
+    rv$race_data <- simulate_race(
+      n_horses = input$n_horses,
+      n_frames = 1500,
+      race_length = input$n_laps * 2 * pi,
+      speed_var = input$speed_var,
+      noise_sd = 0.003,
+      competitiveness = input$competitiveness
+    )
+    
+    # Generate colors
+    rv$colors <- rainbow(input$n_horses, alpha = 0.9)
+    
+    # Initialize probabilities (uniform)
+    rv$probabilities <- rep(1 / input$n_horses, input$n_horses)
+    
+    rv$current_frame <- 1
+    rv$is_running <- TRUE
+    
+    if (turbo) {
+      # Update animation speed to minimum
+      updateSliderInput(session, "animation_speed", value = 5)
+    }
+  }
+  
+  # Start race (normal)
   observeEvent(input$start_btn, {
     if (!rv$is_running) {
-      # Generate new race
-      rv$race_data <- simulate_race(
-        n_horses = input$n_horses,
-        n_frames = 1000,
-        race_length = input$n_laps * 2 * pi,
-        speed_var = input$speed_var
-      )
-      
-      # Generate colors
-      rv$colors <- rainbow(input$n_horses, alpha = 0.9)
-      
-      # Initialize probabilities (uniform)
-      rv$probabilities <- rep(1 / input$n_horses, input$n_horses)
-      
-      rv$current_frame <- 1
-      rv$is_running <- TRUE
+      start_new_race(turbo = FALSE)
+    }
+  })
+  
+  # Start race (turbo mode)
+  observeEvent(input$fast_btn, {
+    if (!rv$is_running) {
+      start_new_race(turbo = TRUE)
     }
   })
   
@@ -311,24 +337,32 @@ server <- function(input, output, session) {
         y_all <- c(y_all, y_s)
       }
       
-      # Fit binary logistic via IRLS
+      # Fit binary logistic via Ridge-IRLS (lambda prevents separation issues)
       tryCatch({
-        fit <- irls_logistic(X_all, y_all, verbose = FALSE)
+        fit <- irls_logistic(X_all, y_all, lambda = 0.5, verbose = FALSE)
         
-        # Predict probabilities for current state
+        # Predict probabilities for current state (clip eta for stability)
         eta_current <- as.vector(X_current %*% fit$coefficients)
+        eta_current <- pmax(pmin(eta_current, 10), -10)
         probs <- expit(eta_current)
         probs <- probs / sum(probs)  # Normalize to sum to 1
         
         rv$probabilities <- probs
         
+        # Count lead changes for drama indicator
+        leaders <- apply(rv$race_data$positions[1:t, , drop=FALSE], 1, which.max)
+        lead_changes <- sum(diff(leaders) != 0)
+        
         # Update IRLS info
         rv$irls_info <- sprintf(
-"BINARY LOGISTIC REGRESSION VIA IRLS
-=====================================
-Frame: %d | Observations: %d
+"RIDGE-REGULARIZED BINARY LOGISTIC REGRESSION (IRLS)
+====================================================
+Frame: %d | Observations: %d | λ (ridge): 0.5
 
-COEFFICIENTS:
+RACE DYNAMICS:
+  Lead Changes: %d  %s
+
+COEFFICIENTS (with L2 penalty):
   Intercept     : %+.4f (SE: %.4f)
   Remaining Dist: %+.4f (SE: %.4f)  
   Speed         : %+.4f (SE: %.4f)
@@ -340,20 +374,23 @@ MODEL FIT:
   IRLS Iterations  : %d
   Converged        : %s
 
-CURRENT LINEAR PREDICTORS (η = Xβ):
+CURRENT LINEAR PREDICTORS (η = Xβ, clipped to [-10, 10]):
 %s
 
-FITTED PROBABILITIES (π = expit(η)):
+WIN PROBABILITIES (softmax normalized):
 %s",
-          t, nrow(X_all),
+          t, nrow(X_all), lead_changes,
+          ifelse(lead_changes > 5, "🔥 TIGHT RACE!", 
+                 ifelse(lead_changes > 2, "⚡ Competitive", "📊 Steady leader")),
           fit$coefficients[1], fit$se[1],
           fit$coefficients[2], fit$se[2],
           fit$coefficients[3], fit$se[3],
           fit$coefficients[4], fit$se[4],
           fit$null_deviance, fit$deviance, fit$iterations,
           ifelse(fit$converged, "YES", "NO"),
-          paste(sprintf("  Horse %2d: η = %+.3f", 1:n_horses, eta_current), collapse = "\n"),
-          paste(sprintf("  Horse %2d: π = %.3f", 1:n_horses, probs), collapse = "\n")
+          paste(sprintf("  Horse %2d: η = %+6.2f", 1:n_horses, eta_current), collapse = "\n"),
+          paste(sprintf("  Horse %2d: %5.1f%% %s", 1:n_horses, probs * 100,
+                        ifelse(probs == max(probs), "← FAVORITE", "")), collapse = "\n")
         )
         
       }, error = function(e) {

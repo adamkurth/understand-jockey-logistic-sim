@@ -1,6 +1,6 @@
 # =============================================================================
 # GLM/IRLS Engine for Horse Race Simulation
-# Implements the exact specifications from GLM_TECHNICAL_SPECIFICATION.md
+# Implements the exact specifications from README.md
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -26,43 +26,46 @@ logit <- function(p) {
 
 #' Binary Logistic Regression via Iteratively Reweighted Least Squares (IRLS)
 #' 
-#' Implements the Newton-Raphson/Fisher Scoring algorithm:
-#'   β^(t+1) = β^(t) + I^(-1)(β^(t)) * U(β^(t))
-#' 
-#' Reformulated as weighted least squares:
-#'   β^(t+1) = (X'W^(t)X)^(-1) X'W^(t)z^(t)
+#' Implements the Newton-Raphson/Fisher Scoring algorithm with optional
+#' Ridge (L2) regularization to handle complete/quasi-complete separation:
+#'   β^(t+1) = (X'W^(t)X + λI)^(-1) X'W^(t)z^(t)
 #' 
 #' where:
 #'   - W = diag(π_i(1 - π_i))  [variance function]
 #'   - z_i = η_i + (y_i - π_i) / (π_i(1 - π_i))  [working response]
+#'   - λ = ridge penalty (prevents coefficient explosion in separation)
 #' 
 #' @param X Design matrix (n x p), should include intercept column
 #' @param y Response vector (n x 1), binary 0/1
 #' @param tol Convergence tolerance for coefficient change
 #' @param maxiter Maximum number of IRLS iterations
+#' @param lambda Ridge penalty (default 0.1 for regularization)
 #' @param verbose Print iteration information
 #' @return List containing coefficients, fitted values, variance-covariance matrix, etc.
-irls_logistic <- function(X, y, tol = 1e-8, maxiter = 25, verbose = FALSE) {
+irls_logistic <- function(X, y, tol = 1e-6, maxiter = 50, lambda = 0.1, verbose = FALSE) {
   n <- nrow(X)
   p <- ncol(X)
+  
+  # Ridge penalty matrix (don't penalize intercept)
+  ridge_mat <- diag(c(0, rep(lambda, p - 1)))
   
   # Initialize coefficients at zero
   beta <- rep(0, p)
   
   # IRLS iteration
   for (iter in seq_len(maxiter)) {
-    # Step 1: Compute linear predictor
+    # Step 1: Compute linear predictor (clip to prevent overflow)
     eta <- as.vector(X %*% beta)
+    eta <- pmax(pmin(eta, 20), -20)  # Clip to [-20, 20]
     
     # Step 2: Compute fitted probabilities via inverse link
     pi_hat <- expit(eta)
     
     # Step 3: Compute variance function V(μ) = π(1-π)
-    # This is the diagonal of the weight matrix
+    # Bound away from 0 and 1 to prevent numerical issues
+    pi_hat <- pmax(pmin(pi_hat, 1 - 1e-6), 1e-6)
     variance <- pi_hat * (1 - pi_hat)
-    
-    # Handle numerical issues: bound away from 0
-    variance <- pmax(variance, 1e-10)
+    variance <- pmax(variance, 1e-8)
     
     # Step 4: Weight matrix W = diag(V(μ))
     W <- diag(variance)
@@ -71,13 +74,16 @@ irls_logistic <- function(X, y, tol = 1e-8, maxiter = 25, verbose = FALSE) {
     # z_i = η_i + (y_i - π_i) / V(μ_i)
     z <- eta + (y - pi_hat) / variance
     
-    # Step 6: Weighted least squares update
-    # β^(new) = (X'WX)^(-1) X'Wz
-    XtWX <- t(X) %*% W %*% X
+    # Step 6: Ridge-penalized weighted least squares update
+    # β^(new) = (X'WX + λI)^(-1) X'Wz
+    XtWX <- t(X) %*% W %*% X + ridge_mat
     XtWz <- t(X) %*% W %*% z
     
     # Solve the normal equations
-    beta_new <- as.vector(solve(XtWX, XtWz))
+    beta_new <- tryCatch(
+      as.vector(solve(XtWX, XtWz)),
+      error = function(e) beta  # Keep current if singular
+    )
     
     # Check convergence
     delta <- max(abs(beta_new - beta))
@@ -230,7 +236,7 @@ multinom_gradient <- function(beta_vec, X, Y, J) {
   -grad  # Negative for minimization
 }
 
-#' Multinomial Logistic Regression via Newton-Raphson
+#' Multinomial Logistic Regression via Newton-Raphson/Fisher Scoring
 #' 
 #' Uses optim() with BFGS and analytic gradients
 #' 
@@ -370,40 +376,123 @@ conditional_logistic <- function(X_list, winner, maxiter = 100) {
 # RACE SIMULATION ENGINE
 # -----------------------------------------------------------------------------
 
-#' Simulate Horse Race Dynamics
+#' Simulate Horse Race Dynamics with Competitive Mechanics
 #' 
-#' Generates race state evolution with physics-based movement
+#' Generates exciting race dynamics with:
+#'   - Drafting: horses behind leaders get speed boost from slipstream
+#'   - Fatigue: leading horses tire faster
+#'   - Burst potential: random speed surges
+#'   - Pack dynamics: horses tend to cluster
+#'   - Comeback mechanics: trailing horses get motivation boost
 #' 
 #' @param n_horses Number of horses
 #' @param n_frames Number of simulation frames
 #' @param race_length Total race distance (in radians for circular track)
 #' @param base_speed Mean speed for all horses
-#' @param speed_var Speed variation between horses
+#' @param speed_var Speed variation between horses (ability spread)
 #' @param noise_sd Per-frame random noise in speed
+#' @param competitiveness How competitive the race is (0-1, higher = more lead changes)
 #' @return List with positions, speeds, and winner
 simulate_race <- function(n_horses = 10, 
                           n_frames = 500,
                           race_length = 3 * 2 * pi,  # 3 laps
                           base_speed = 0.02,
                           speed_var = 0.002,
-                          noise_sd = 0.001) {
+                          noise_sd = 0.003,
+                          competitiveness = 0.7) {
   
-  # Initialize horse abilities (fixed per race)
-  abilities <- rnorm(n_horses, mean = base_speed, sd = speed_var)
-  abilities <- pmax(abilities, 0.005)  # Ensure positive
+  # Initialize horse abilities (REDUCED variance for closer races)
+  # Competitiveness reduces ability spread
+  effective_var <- speed_var * (1 - competitiveness * 0.8)
+  abilities <- rnorm(n_horses, mean = base_speed, sd = effective_var)
+  abilities <- pmax(abilities, base_speed * 0.5)  # Floor at 50% base
   
-  # Initialize positions (all start at 0)
+  # Burst potential: each horse can have random speed surges
+  burst_probability <- 0.02 + competitiveness * 0.03  # 2-5% chance per frame
+  burst_magnitude <- base_speed * 0.5  # 50% speed boost during burst
+  
+  # Fatigue accumulator (leading is tiring)
+  fatigue <- rep(0, n_horses)
+  fatigue_rate <- 0.0001 * (1 + competitiveness)  # Accumulates when leading
+  fatigue_recovery <- 0.00005  # Recovers when drafting
+  
+  # Initialize positions (staggered start for visual variety)
   positions <- matrix(0, nrow = n_frames, ncol = n_horses)
   speeds <- matrix(0, nrow = n_frames, ncol = n_horses)
   
+  # Small stagger at start (simulates reaction times)
+  positions[1, ] <- runif(n_horses, -0.02, 0.02)
+  
   # Simulate frame by frame
   for (t in 2:n_frames) {
-    # Current speed = ability + random noise
-    current_speeds <- abilities + rnorm(n_horses, 0, noise_sd)
-    current_speeds <- pmax(current_speeds, 0)
+    prev_positions <- positions[t - 1, ]
+    
+    # Determine current rankings
+    ranks <- rank(-prev_positions)  # 1 = leader
+    leader_idx <- which.min(ranks)
+    
+    # === DRAFTING MECHANIC ===
+    # Horses close behind others get a speed boost (slipstream)
+    draft_bonus <- rep(0, n_horses)
+    for (i in 1:n_horses) {
+      # Find horses ahead within drafting range
+      ahead_mask <- prev_positions > prev_positions[i]
+      if (any(ahead_mask)) {
+        dist_to_nearest_ahead <- min(prev_positions[ahead_mask] - prev_positions[i])
+        if (dist_to_nearest_ahead < 0.5) {  # Within drafting range
+          draft_bonus[i] <- base_speed * 0.15 * (1 - dist_to_nearest_ahead / 0.5)
+        }
+      }
+    }
+    
+    # === FATIGUE MECHANIC ===
+    # Leader accumulates fatigue, others recover
+    fatigue[leader_idx] <- fatigue[leader_idx] + fatigue_rate
+    fatigue[-leader_idx] <- pmax(0, fatigue[-leader_idx] - fatigue_recovery)
+    fatigue_penalty <- fatigue * base_speed * 2  # Up to ~20% slowdown
+    
+    # === BURST MECHANIC ===
+    # Random speed surges (more likely for trailing horses)
+    burst_active <- runif(n_horses) < (burst_probability * (1 + (ranks - 1) / n_horses))
+    burst_bonus <- ifelse(burst_active, burst_magnitude * runif(n_horses, 0.5, 1), 0)
+    
+    # === COMEBACK MECHANIC ===
+    # Horses far behind get motivation boost
+    position_spread <- max(prev_positions) - min(prev_positions)
+    if (position_spread > 0.3) {
+      comeback_bonus <- (max(prev_positions) - prev_positions) / position_spread * base_speed * 0.1 * competitiveness
+    } else {
+      comeback_bonus <- rep(0, n_horses)
+    }
+    
+    # === PACK DYNAMICS ===
+    # Horses near each other adjust speed slightly toward pack
+    pack_pull <- rep(0, n_horses)
+    mean_pos <- mean(prev_positions)
+    spread <- sd(prev_positions) + 1e-6
+    # Normalize distance from pack center
+    dist_from_pack <- (prev_positions - mean_pos) / spread
+    # Pull toward pack (stronger for outliers)
+    pack_pull <- -dist_from_pack * base_speed * 0.02 * competitiveness
+    
+    # === RANDOM NOISE ===
+    # Higher noise = more unpredictable
+    noise <- rnorm(n_horses, 0, noise_sd * (1 + competitiveness))
+    
+    # === COMPUTE FINAL SPEED ===
+    current_speeds <- abilities + 
+                      draft_bonus + 
+                      burst_bonus + 
+                      comeback_bonus + 
+                      pack_pull - 
+                      fatigue_penalty + 
+                      noise
+    
+    # Floor speed (can't go backwards, minimum movement)
+    current_speeds <- pmax(current_speeds, base_speed * 0.3)
     
     speeds[t, ] <- current_speeds
-    positions[t, ] <- positions[t - 1, ] + current_speeds
+    positions[t, ] <- prev_positions + current_speeds
     
     # Check if race is over
     if (any(positions[t, ] >= race_length)) {
