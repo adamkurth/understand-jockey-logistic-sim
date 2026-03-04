@@ -1,0 +1,1267 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Generalized Linear Models for Race Simulation: Technical Specification
+% A comprehensive mathematical treatment of GLM theory with applications
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[11pt,letterpaper]{article}
+
+%------------------------------------------------------------------------------
+% Packages
+%------------------------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{bm}              % Bold math symbols
+\usepackage{bbm}             % Blackboard bold for indicators
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+%------------------------------------------------------------------------------
+% Page Layout
+%------------------------------------------------------------------------------
+\geometry{
+    left=1in,
+    right=1in,
+    top=1in,
+    bottom=1in
+}
+
+%------------------------------------------------------------------------------
+% Header/Footer
+%------------------------------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{GLM Technical Specification}
+\lhead{Race Simulation}
+\rfoot{Page \thepage}
+
+%------------------------------------------------------------------------------
+% Theorem Environments
+%------------------------------------------------------------------------------
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{remark}{Remark}[section]
+\newtheorem{example}{Example}[section]
+
+%------------------------------------------------------------------------------
+% Custom Commands
+%------------------------------------------------------------------------------
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\ind}{\perp\!\!\!\perp}
+\newcommand{\X}{\mathbf{X}}
+\newcommand{\y}{\mathbf{y}}
+\newcommand{\bb}{\boldsymbol{\beta}}
+\newcommand{\pp}{\boldsymbol{\pi}}
+\newcommand{\ee}{\boldsymbol{\eta}}
+\newcommand{\W}{\mathbf{W}}
+\newcommand{\I}{\mathcal{I}}
+\newcommand{\tr}{\mathrm{tr}}
+\newcommand{\diag}{\mathrm{diag}}
+\newcommand{\sign}{\mathrm{sign}}
+\newcommand{\expit}{\mathrm{expit}}
+\newcommand{\logit}{\mathrm{logit}}
+\newcommand{\dd}{\,\mathrm{d}}
+
+%------------------------------------------------------------------------------
+% Code Listing Style
+%------------------------------------------------------------------------------
+\lstset{
+    language=R,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    frame=single,
+    breaklines=true,
+    captionpos=b
+}
+
+%------------------------------------------------------------------------------
+% Title Block
+%------------------------------------------------------------------------------
+\title{
+    \textbf{Generalized Linear Models for Race Simulation} \\[0.5em]
+    \large Technical Specification and Mathematical Foundations
+}
+\author{
+    Horse Race Simulation Project \\
+    \texttt{understand-jockey-logistic-sim}
+}
+\date{\today}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\maketitle
+
+\begin{abstract}
+This document provides a comprehensive mathematical treatment of Generalized Linear Models (GLMs) as applied to horse race simulation with real-time win probability estimation. We derive the theoretical foundations from first principles, including the exponential family formulation, maximum likelihood estimation via Iteratively Reweighted Least Squares (IRLS), and extend to multinomial and conditional logistic regression. Special attention is given to numerical stability considerations and the connection between Fisher scoring and Newton-Raphson optimization. The framework aligns with classical references including Agresti (2013) and McCullagh \& Nelder (1989).
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+The goal of this project is to implement transparent, analytically-derived methods for win probability estimation that align with the Generalized Linear Model (GLM) framework. This replaces black-box estimators (e.g., scikit-learn) with methods whose mathematical foundations are explicit and verifiable.
+
+\subsection{GLM Framework Overview}
+
+A GLM consists of three components:
+\begin{enumerate}
+    \item \textbf{Random Component}: The response variable $Y_i$ follows a distribution from the exponential family
+    \item \textbf{Systematic Component}: A linear predictor $\eta_i = \mathbf{x}_i^\top \bb$
+    \item \textbf{Link Function}: A monotonic differentiable function $g$ relating $\E[Y_i] = \mu_i$ to $\eta_i$
+\end{enumerate}
+
+\subsection{Key References}
+
+\begin{itemize}
+    \item Agresti, A. (2013). \textit{Categorical Data Analysis} (3rd ed.). Wiley.
+    \item McCullagh, P., \& Nelder, J.A. (1989). \textit{Generalized Linear Models} (2nd ed.). Chapman \& Hall.
+    \item Hosmer, D.W., Lemeshow, S., \& Sturdivant, R.X. (2013). \textit{Applied Logistic Regression} (3rd ed.). Wiley.
+    \item McFadden, D. (1974). Conditional logit analysis of qualitative choice behavior.
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The Exponential Family}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{General Definition}
+
+\begin{definition}[Exponential Family]
+A probability distribution belongs to the \textbf{one-parameter exponential family} if its density or mass function can be written as:
+\begin{equation}
+    f(y; \theta, \phi) = \exp\left( \frac{y\theta - b(\theta)}{a(\phi)} + c(y, \phi) \right)
+    \label{eq:exp-family}
+\end{equation}
+where:
+\begin{itemize}
+    \item $\theta$ is the \textbf{natural (canonical) parameter}
+    \item $\phi$ is the \textbf{dispersion parameter}
+    \item $b(\theta)$ is the \textbf{cumulant function} (log-normalizer)
+    \item $a(\phi)$ and $c(y, \phi)$ are known functions
+\end{itemize}
+\end{definition}
+
+\subsection{Fundamental Properties}
+
+\begin{theorem}[Mean and Variance from Cumulant Function]
+\label{thm:cumulant}
+For a distribution in the exponential family form \eqref{eq:exp-family}:
+\begin{align}
+    \E[Y] &= b'(\theta) = \mu \label{eq:exp-mean} \\
+    \Var(Y) &= a(\phi) \cdot b''(\theta) = a(\phi) \cdot V(\mu) \label{eq:exp-var}
+\end{align}
+where $V(\mu) = b''(\theta)$ is the \textbf{variance function}.
+\end{theorem}
+
+\begin{proof}
+Consider the log-likelihood for a single observation:
+\begin{equation}
+    \ell(\theta; y) = \frac{y\theta - b(\theta)}{a(\phi)} + c(y, \phi)
+\end{equation}
+
+\textbf{Step 1: Derive the mean.} Taking the derivative with respect to $\theta$:
+\begin{equation}
+    \frac{\partial \ell}{\partial \theta} = \frac{y - b'(\theta)}{a(\phi)}
+\end{equation}
+
+By the score equation property, $\E\left[\frac{\partial \ell}{\partial \theta}\right] = 0$. Therefore:
+\begin{equation}
+    \E\left[\frac{y - b'(\theta)}{a(\phi)}\right] = 0 \implies \E[Y] = b'(\theta)
+\end{equation}
+
+\textbf{Step 2: Derive the variance.} The second derivative:
+\begin{equation}
+    \frac{\partial^2 \ell}{\partial \theta^2} = -\frac{b''(\theta)}{a(\phi)}
+\end{equation}
+
+Using the information identity $\E\left[-\frac{\partial^2 \ell}{\partial \theta^2}\right] = \E\left[\left(\frac{\partial \ell}{\partial \theta}\right)^2\right]$:
+\begin{equation}
+    \frac{b''(\theta)}{a(\phi)} = \E\left[\frac{(Y - b'(\theta))^2}{a(\phi)^2}\right] = \frac{\Var(Y)}{a(\phi)^2}
+\end{equation}
+
+Solving for variance:
+\begin{equation}
+    \Var(Y) = a(\phi) \cdot b''(\theta)
+\end{equation}
+\end{proof}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Binary Logistic Regression}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Bernoulli Distribution in Exponential Family Form}
+
+\begin{proposition}[Bernoulli as Exponential Family]
+The Bernoulli distribution with parameter $\pi$ can be written in exponential family form.
+\end{proposition}
+
+\begin{proof}
+Start with the Bernoulli PMF for $Y \in \{0, 1\}$:
+\begin{equation}
+    f(y; \pi) = \pi^y (1-\pi)^{1-y}
+\end{equation}
+
+\textbf{Step 1: Take the logarithm.}
+\begin{align}
+    \log f(y; \pi) &= y \log \pi + (1-y) \log(1-\pi) \\
+    &= y \log \pi - y \log(1-\pi) + \log(1-\pi) \\
+    &= y \log\left(\frac{\pi}{1-\pi}\right) + \log(1-\pi)
+\end{align}
+
+\textbf{Step 2: Exponentiate.}
+\begin{equation}
+    f(y; \pi) = \exp\left( y \log\left(\frac{\pi}{1-\pi}\right) + \log(1-\pi) \right)
+\end{equation}
+
+\textbf{Step 3: Identify components.} Comparing with \eqref{eq:exp-family}:
+\begin{align}
+    \theta &= \log\left(\frac{\pi}{1-\pi}\right) \quad \text{(natural parameter = logit)} \\
+    b(\theta) &= \log(1 + e^\theta) \quad \text{(cumulant function)} \\
+    a(\phi) &= 1 \quad \text{(no dispersion)} \\
+    c(y, \phi) &= 0
+\end{align}
+
+\textbf{Step 4: Verify the inverse relationship.}
+From $\theta = \log\left(\frac{\pi}{1-\pi}\right)$, we solve for $\pi$:
+\begin{equation}
+    e^\theta = \frac{\pi}{1-\pi} \implies \pi = \frac{e^\theta}{1 + e^\theta} = \frac{1}{1 + e^{-\theta}}
+\end{equation}
+
+This is the \textbf{logistic function}: $\pi = \expit(\theta) = \sigma(\theta)$.
+
+\textbf{Step 5: Verify mean and variance using Theorem \ref{thm:cumulant}.}
+\begin{align}
+    \mu = b'(\theta) &= \frac{e^\theta}{1 + e^\theta} = \pi \quad \checkmark \\
+    V(\mu) = b''(\theta) &= \frac{e^\theta}{(1+e^\theta)^2} = \pi(1-\pi) \quad \checkmark
+\end{align}
+\end{proof}
+
+\subsection{The Three GLM Components for Logistic Regression}
+
+\subsubsection{Random Component}
+
+\begin{equation}
+    Y_i \stackrel{\text{ind}}{\sim} \text{Bernoulli}(\pi_i), \quad i = 1, \ldots, n
+\end{equation}
+
+With properties:
+\begin{align}
+    \E[Y_i] &= \pi_i \\
+    \Var(Y_i) &= \pi_i(1-\pi_i)
+\end{align}
+
+\subsubsection{Systematic Component}
+
+The \textbf{linear predictor}:
+\begin{equation}
+    \eta_i = \mathbf{x}_i^\top \bb = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \cdots + \beta_p x_{ip}
+\end{equation}
+
+In matrix notation:
+\begin{equation}
+    \ee = \X\bb
+\end{equation}
+where $\X$ is the $n \times (p+1)$ design matrix (including intercept column).
+
+\subsubsection{Link Function}
+
+The \textbf{canonical link} for Bernoulli is the logit:
+\begin{equation}
+    g(\pi_i) = \logit(\pi_i) = \log\left(\frac{\pi_i}{1-\pi_i}\right) = \eta_i
+    \label{eq:logit-link}
+\end{equation}
+
+The \textbf{inverse link} (response function):
+\begin{equation}
+    \pi_i = g^{-1}(\eta_i) = \expit(\eta_i) = \frac{e^{\eta_i}}{1 + e^{\eta_i}} = \frac{1}{1 + e^{-\eta_i}}
+    \label{eq:expit}
+\end{equation}
+
+\begin{remark}[Why Logit is Canonical]
+The logit link is canonical because it directly maps the mean $\pi$ to the natural parameter $\theta$. Using the canonical link simplifies the score equations and ensures the observed and expected information matrices coincide.
+\end{remark}
+
+\subsection{Alternative Link Functions}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Link} & \textbf{Function} $g(\pi)$ & \textbf{Inverse} $g^{-1}(\eta)$ & \textbf{Use Case} \\
+\midrule
+Logit & $\log\frac{\pi}{1-\pi}$ & $\frac{e^\eta}{1+e^\eta}$ & Default, symmetric \\
+Probit & $\Phi^{-1}(\pi)$ & $\Phi(\eta)$ & Latent normal threshold \\
+Complementary log-log & $\log(-\log(1-\pi))$ & $1 - e^{-e^\eta}$ & Asymmetric, rare events \\
+Cauchit & $\tan(\pi(\pi - 0.5))$ & --- & Heavy tails \\
+\bottomrule
+\end{tabular}
+\caption{Common link functions for binary response models}
+\label{tab:links}
+\end{table}
+
+\subsection{Coefficient Interpretation: Odds Ratios}
+
+\begin{theorem}[Odds Ratio Interpretation]
+For a unit increase in covariate $x_j$, holding other covariates constant, the odds ratio is:
+\begin{equation}
+    \text{OR}_j = \frac{\text{Odds}(Y=1 \mid x_j + 1)}{\text{Odds}(Y=1 \mid x_j)} = e^{\beta_j}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Define the odds as $\text{Odds} = \frac{\pi}{1-\pi}$.
+
+From the model:
+\begin{equation}
+    \log\left(\frac{\pi}{1-\pi}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_j x_j + \cdots + \beta_p x_p
+\end{equation}
+
+With $x_j \to x_j + 1$:
+\begin{equation}
+    \log\left(\frac{\pi^*}{1-\pi^*}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_j (x_j + 1) + \cdots + \beta_p x_p
+\end{equation}
+
+Taking the difference:
+\begin{equation}
+    \log\left(\frac{\pi^*}{1-\pi^*}\right) - \log\left(\frac{\pi}{1-\pi}\right) = \beta_j
+\end{equation}
+
+Therefore:
+\begin{equation}
+    \log\left(\text{OR}_j\right) = \beta_j \implies \text{OR}_j = e^{\beta_j}
+\end{equation}
+\end{proof}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Maximum Likelihood Estimation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Log-Likelihood for Binary Logistic Regression}
+
+For independent observations $(y_1, \ldots, y_n)$ with corresponding probabilities $(\pi_1, \ldots, \pi_n)$:
+
+\begin{equation}
+    L(\bb) = \prod_{i=1}^{n} \pi_i^{y_i} (1-\pi_i)^{1-y_i}
+\end{equation}
+
+The log-likelihood:
+\begin{align}
+    \ell(\bb) &= \sum_{i=1}^{n} \left[ y_i \log(\pi_i) + (1-y_i) \log(1-\pi_i) \right] \\
+    &= \sum_{i=1}^{n} \left[ y_i \log\left(\frac{\pi_i}{1-\pi_i}\right) + \log(1-\pi_i) \right] \\
+    &= \sum_{i=1}^{n} \left[ y_i \eta_i - \log(1 + e^{\eta_i}) \right]
+    \label{eq:binary-loglik}
+\end{align}
+
+where $\eta_i = \mathbf{x}_i^\top \bb$.
+
+\subsection{Score Function}
+
+\begin{definition}[Score Function]
+The score function is the gradient of the log-likelihood with respect to the parameters:
+\begin{equation}
+    \mathbf{S}(\bb) = \frac{\partial \ell}{\partial \bb}
+\end{equation}
+\end{definition}
+
+\begin{theorem}[Score for Binary Logistic Regression]
+\begin{equation}
+    \mathbf{S}(\bb) = \X^\top (\y - \pp) = \sum_{i=1}^{n} (y_i - \pi_i) \mathbf{x}_i
+    \label{eq:score}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+From \eqref{eq:binary-loglik}:
+\begin{equation}
+    \ell(\bb) = \sum_{i=1}^{n} \left[ y_i \eta_i - \log(1 + e^{\eta_i}) \right]
+\end{equation}
+
+\textbf{Step 1: Differentiate with respect to $\beta_j$.}
+\begin{equation}
+    \frac{\partial \ell}{\partial \beta_j} = \sum_{i=1}^{n} \left[ y_i \frac{\partial \eta_i}{\partial \beta_j} - \frac{e^{\eta_i}}{1 + e^{\eta_i}} \frac{\partial \eta_i}{\partial \beta_j} \right]
+\end{equation}
+
+Since $\eta_i = \mathbf{x}_i^\top \bb$, we have $\frac{\partial \eta_i}{\partial \beta_j} = x_{ij}$.
+
+\textbf{Step 2: Substitute.}
+\begin{equation}
+    \frac{\partial \ell}{\partial \beta_j} = \sum_{i=1}^{n} (y_i - \pi_i) x_{ij}
+\end{equation}
+
+\textbf{Step 3: Express in matrix form.}
+\begin{equation}
+    \mathbf{S}(\bb) = \X^\top (\y - \pp)
+\end{equation}
+where $\pp = (\pi_1, \ldots, \pi_n)^\top$ and $\y = (y_1, \ldots, y_n)^\top$.
+\end{proof}
+
+\subsection{Hessian and Fisher Information}
+
+\begin{definition}[Hessian Matrix]
+The Hessian is the matrix of second partial derivatives:
+\begin{equation}
+    \mathbf{H}(\bb) = \frac{\partial^2 \ell}{\partial \bb \partial \bb^\top}
+\end{equation}
+\end{definition}
+
+\begin{theorem}[Hessian for Binary Logistic Regression]
+\begin{equation}
+    \mathbf{H}(\bb) = -\X^\top \W \X
+    \label{eq:hessian}
+\end{equation}
+where $\W = \diag(\pi_1(1-\pi_1), \ldots, \pi_n(1-\pi_n))$ is the weight matrix.
+\end{theorem}
+
+\begin{proof}
+\textbf{Step 1: Differentiate the score.}
+From $\frac{\partial \ell}{\partial \beta_j} = \sum_{i=1}^{n} (y_i - \pi_i) x_{ij}$:
+\begin{equation}
+    \frac{\partial^2 \ell}{\partial \beta_j \partial \beta_k} = -\sum_{i=1}^{n} \frac{\partial \pi_i}{\partial \beta_k} x_{ij}
+\end{equation}
+
+\textbf{Step 2: Compute $\frac{\partial \pi_i}{\partial \beta_k}$.}
+Since $\pi_i = \frac{e^{\eta_i}}{1 + e^{\eta_i}}$:
+\begin{align}
+    \frac{\partial \pi_i}{\partial \eta_i} &= \frac{e^{\eta_i}(1+e^{\eta_i}) - e^{\eta_i} \cdot e^{\eta_i}}{(1+e^{\eta_i})^2} \\
+    &= \frac{e^{\eta_i}}{(1+e^{\eta_i})^2} = \pi_i(1-\pi_i)
+\end{align}
+
+By the chain rule:
+\begin{equation}
+    \frac{\partial \pi_i}{\partial \beta_k} = \pi_i(1-\pi_i) \cdot x_{ik}
+\end{equation}
+
+\textbf{Step 3: Substitute.}
+\begin{equation}
+    \frac{\partial^2 \ell}{\partial \beta_j \partial \beta_k} = -\sum_{i=1}^{n} \pi_i(1-\pi_i) x_{ij} x_{ik}
+\end{equation}
+
+\textbf{Step 4: Express in matrix form.}
+\begin{equation}
+    \mathbf{H}(\bb) = -\X^\top \W \X
+\end{equation}
+\end{proof}
+
+\begin{definition}[Fisher Information]
+The Fisher information matrix is the negative expected Hessian:
+\begin{equation}
+    \I(\bb) = -\E[\mathbf{H}(\bb)] = \E\left[\mathbf{S}(\bb)\mathbf{S}(\bb)^\top\right]
+\end{equation}
+\end{definition}
+
+\begin{corollary}[Fisher Information for Canonical Link]
+For the logit link (canonical), the observed and expected information coincide:
+\begin{equation}
+    \I(\bb) = \X^\top \W \X
+    \label{eq:fisher}
+\end{equation}
+\end{corollary}
+
+\begin{remark}
+This coincidence occurs because $\W$ depends on $\bb$ only through $\pp$, not on the random response $\y$. For non-canonical links, the observed and expected information differ.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Iteratively Reweighted Least Squares (IRLS)}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Newton-Raphson Foundation}
+
+\begin{theorem}[Newton-Raphson Update]
+The Newton-Raphson method for finding $\hat{\bb}$ such that $\mathbf{S}(\hat{\bb}) = \mathbf{0}$:
+\begin{equation}
+    \bb^{(t+1)} = \bb^{(t)} - \mathbf{H}^{-1}(\bb^{(t)}) \mathbf{S}(\bb^{(t)})
+    \label{eq:newton}
+\end{equation}
+\end{theorem}
+
+\begin{proof}[Derivation via Taylor Expansion]
+Expand the score function around $\bb^{(t)}$:
+\begin{equation}
+    \mathbf{S}(\bb) \approx \mathbf{S}(\bb^{(t)}) + \mathbf{H}(\bb^{(t)})(\bb - \bb^{(t)})
+\end{equation}
+
+Setting $\mathbf{S}(\bb^{(t+1)}) = \mathbf{0}$:
+\begin{equation}
+    \mathbf{0} \approx \mathbf{S}(\bb^{(t)}) + \mathbf{H}(\bb^{(t)})(\bb^{(t+1)} - \bb^{(t)})
+\end{equation}
+
+Solving:
+\begin{equation}
+    \bb^{(t+1)} = \bb^{(t)} - \mathbf{H}^{-1}(\bb^{(t)}) \mathbf{S}(\bb^{(t)})
+\end{equation}
+\end{proof}
+
+\subsection{Fisher Scoring}
+
+\begin{definition}[Fisher Scoring]
+Fisher scoring replaces the Hessian with its expected value:
+\begin{equation}
+    \bb^{(t+1)} = \bb^{(t)} + \I^{-1}(\bb^{(t)}) \mathbf{S}(\bb^{(t)})
+    \label{eq:fisher-scoring}
+\end{equation}
+\end{definition}
+
+\begin{remark}
+For canonical links, Newton-Raphson and Fisher scoring are identical since $\mathbf{H} = -\I$.
+\end{remark}
+
+\subsection{IRLS Reformulation}
+
+\begin{theorem}[IRLS as Weighted Least Squares]
+\label{thm:irls}
+The Fisher scoring update \eqref{eq:fisher-scoring} can be written as:
+\begin{equation}
+    \bb^{(t+1)} = (\X^\top \W^{(t)} \X)^{-1} \X^\top \W^{(t)} \mathbf{z}^{(t)}
+    \label{eq:irls}
+\end{equation}
+where $\mathbf{z}^{(t)}$ is the \textbf{working response} (also called adjusted dependent variable).
+\end{theorem}
+
+\begin{proof}
+\textbf{Step 1: Expand Fisher scoring.}
+\begin{align}
+    \bb^{(t+1)} &= \bb^{(t)} + (\X^\top \W^{(t)} \X)^{-1} \X^\top (\y - \pp^{(t)})
+\end{align}
+
+\textbf{Step 2: Factor out the inverse.}
+\begin{align}
+    \bb^{(t+1)} &= (\X^\top \W^{(t)} \X)^{-1} \left[ \X^\top \W^{(t)} \X \bb^{(t)} + \X^\top (\y - \pp^{(t)}) \right]
+\end{align}
+
+\textbf{Step 3: Factor $\X^\top$.}
+\begin{align}
+    \bb^{(t+1)} &= (\X^\top \W^{(t)} \X)^{-1} \X^\top \left[ \W^{(t)} \X \bb^{(t)} + (\y - \pp^{(t)}) \right]
+\end{align}
+
+\textbf{Step 4: Multiply by $\W^{(t)} (\W^{(t)})^{-1} = \mathbf{I}$.}
+Since $\X\bb^{(t)} = \ee^{(t)}$:
+\begin{align}
+    \bb^{(t+1)} &= (\X^\top \W^{(t)} \X)^{-1} \X^\top \W^{(t)} \left[ \ee^{(t)} + (\W^{(t)})^{-1}(\y - \pp^{(t)}) \right]
+\end{align}
+
+\textbf{Step 5: Define the working response.}
+\begin{equation}
+    z_i^{(t)} = \eta_i^{(t)} + \frac{y_i - \pi_i^{(t)}}{\pi_i^{(t)}(1 - \pi_i^{(t)})}
+    \label{eq:working-response}
+\end{equation}
+
+Note that $(\W^{(t)})^{-1}_{ii} = \frac{1}{\pi_i^{(t)}(1-\pi_i^{(t)})}$.
+\end{proof}
+
+\subsection{Working Response: Deeper Derivation}
+
+\begin{theorem}[Working Response from Taylor Expansion]
+The working response arises from a first-order Taylor expansion of $g(Y_i)$ around $\mu_i$.
+\end{theorem}
+
+\begin{proof}
+Define $g$ as the link function. Expand $g(Y_i)$ around the mean $\mu_i$:
+\begin{equation}
+    g(Y_i) \approx g(\mu_i) + g'(\mu_i)(Y_i - \mu_i)
+\end{equation}
+
+For the logit link:
+\begin{itemize}
+    \item $g(\mu_i) = \log\frac{\mu_i}{1-\mu_i} = \eta_i$
+    \item $g'(\mu_i) = \frac{1}{\mu_i(1-\mu_i)}$ (derivative of logit)
+\end{itemize}
+
+Therefore:
+\begin{equation}
+    g(Y_i) \approx \eta_i + \frac{Y_i - \pi_i}{\pi_i(1-\pi_i)}
+\end{equation}
+
+This motivates treating $z_i = \eta_i + \frac{y_i - \pi_i}{\pi_i(1-\pi_i)}$ as a ``linearized'' response, and the IRLS algorithm fits weighted least squares to these working responses.
+\end{proof}
+
+\subsection{Complete IRLS Algorithm}
+
+\begin{algorithm}[H]
+\caption{IRLS for Binary Logistic Regression}
+\label{alg:irls}
+\begin{algorithmic}[1]
+\Require Design matrix $\X$, response $\y$, tolerance $\epsilon$, max iterations $T$
+\Ensure MLE $\hat{\bb}$, covariance matrix $\widehat{\Var}(\hat{\bb})$, convergence status
+\State Initialize $\bb^{(0)} \gets \mathbf{0}$ \Comment{or use OLS on logit-transformed proportions}
+\For{$t = 0, 1, 2, \ldots, T-1$}
+    \State $\ee^{(t)} \gets \X\bb^{(t)}$ \Comment{Linear predictor}
+    \State $\pp^{(t)} \gets \expit(\ee^{(t)})$ \Comment{Fitted probabilities}
+    \State $\W^{(t)} \gets \diag(\pi_i^{(t)}(1-\pi_i^{(t)}))$ \Comment{Weight matrix}
+    \State $\mathbf{z}^{(t)} \gets \ee^{(t)} + (\W^{(t)})^{-1}(\y - \pp^{(t)})$ \Comment{Working response}
+    \State $\bb^{(t+1)} \gets (\X^\top \W^{(t)} \X)^{-1} \X^\top \W^{(t)} \mathbf{z}^{(t)}$ \Comment{Weighted least squares}
+    \If{$\|\bb^{(t+1)} - \bb^{(t)}\|_\infty < \epsilon$}
+        \State \textbf{break} \Comment{Convergence achieved}
+    \EndIf
+\EndFor
+\State $\widehat{\Var}(\hat{\bb}) \gets (\X^\top \hat{\W} \X)^{-1}$
+\State \Return $\hat{\bb}, \widehat{\Var}(\hat{\bb})$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Ridge Regularization for Complete Separation}
+
+\begin{definition}[Complete Separation]
+Complete separation occurs when a linear combination of covariates perfectly predicts the binary outcome:
+\begin{equation}
+    \exists\, \mathbf{c}: \quad \mathbf{c}^\top \mathbf{x}_i > 0 \iff y_i = 1
+\end{equation}
+In this case, the MLE does not exist (coefficients diverge to $\pm\infty$).
+\end{definition}
+
+\begin{proposition}[Ridge-Penalized IRLS]
+Adding an $L_2$ penalty resolves complete separation:
+\begin{equation}
+    \bb^{(t+1)} = (\X^\top \W^{(t)} \X + \lambda \mathbf{I})^{-1} \X^\top \W^{(t)} \mathbf{z}^{(t)}
+    \label{eq:ridge-irls}
+\end{equation}
+where $\lambda > 0$ is the ridge parameter.
+\end{proposition}
+
+\begin{remark}
+This corresponds to maximizing the penalized log-likelihood:
+\begin{equation}
+    \ell_{\text{pen}}(\bb) = \ell(\bb) - \frac{\lambda}{2}\|\bb\|_2^2
+\end{equation}
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Multinomial Logistic Regression}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Setup and Notation}
+
+For outcomes with $J$ categories (e.g., $J$ horses in a race):
+\begin{itemize}
+    \item $Y_i \in \{1, 2, \ldots, J\}$: categorical response for observation $i$
+    \item $\pi_{ij} = P(Y_i = j)$: probability of category $j$
+    \item Constraint: $\sum_{j=1}^{J} \pi_{ij} = 1$
+\end{itemize}
+
+\subsection{Baseline-Category Logit Model}
+
+Choose category $J$ as the reference. Model the log-odds relative to baseline:
+\begin{equation}
+    \log\left(\frac{\pi_{ij}}{\pi_{iJ}}\right) = \mathbf{x}_i^\top \bb_j, \quad j = 1, \ldots, J-1
+    \label{eq:baseline-logit}
+\end{equation}
+
+This gives $J-1$ equations with $J-1$ coefficient vectors.
+
+\subsection{Solving for Probabilities (Softmax)}
+
+\begin{theorem}[Softmax Derivation]
+From the baseline-category logit model, the category probabilities are:
+\begin{equation}
+    \pi_{ij} = \frac{\exp(\mathbf{x}_i^\top \bb_j)}{\sum_{k=1}^{J} \exp(\mathbf{x}_i^\top \bb_k)}
+    \label{eq:softmax}
+\end{equation}
+where $\bb_J = \mathbf{0}$ (identifiability constraint).
+\end{theorem}
+
+\begin{proof}
+\textbf{Step 1: Express ratios.}
+From \eqref{eq:baseline-logit}:
+\begin{equation}
+    \pi_{ij} = \pi_{iJ} \exp(\mathbf{x}_i^\top \bb_j), \quad j = 1, \ldots, J-1
+\end{equation}
+
+\textbf{Step 2: Apply sum constraint.}
+\begin{equation}
+    \sum_{j=1}^{J} \pi_{ij} = 1 \implies \pi_{iJ} + \sum_{j=1}^{J-1} \pi_{iJ} \exp(\mathbf{x}_i^\top \bb_j) = 1
+\end{equation}
+
+\textbf{Step 3: Factor and solve for $\pi_{iJ}$.}
+\begin{equation}
+    \pi_{iJ} \left(1 + \sum_{j=1}^{J-1} \exp(\mathbf{x}_i^\top \bb_j)\right) = 1
+\end{equation}
+\begin{equation}
+    \pi_{iJ} = \frac{1}{1 + \sum_{k=1}^{J-1} \exp(\mathbf{x}_i^\top \bb_k)}
+\end{equation}
+
+\textbf{Step 4: Solve for other probabilities.}
+\begin{equation}
+    \pi_{ij} = \frac{\exp(\mathbf{x}_i^\top \bb_j)}{1 + \sum_{k=1}^{J-1} \exp(\mathbf{x}_i^\top \bb_k)}, \quad j = 1, \ldots, J-1
+\end{equation}
+
+\textbf{Step 5: Unified form.}
+Setting $\bb_J = \mathbf{0}$ (so $\exp(\mathbf{x}_i^\top \bb_J) = 1$):
+\begin{equation}
+    \pi_{ij} = \frac{\exp(\mathbf{x}_i^\top \bb_j)}{\sum_{k=1}^{J} \exp(\mathbf{x}_i^\top \bb_k)}, \quad j = 1, \ldots, J
+\end{equation}
+\end{proof}
+
+\subsection{Log-Likelihood}
+
+For $n$ independent observations with indicator variables $y_{ij} = \mathbbm{1}(Y_i = j)$:
+
+\begin{theorem}[Multinomial Log-Likelihood]
+\begin{equation}
+    \ell(\bb) = \sum_{i=1}^{n} \sum_{j=1}^{J} y_{ij} \left[ \mathbf{x}_i^\top \bb_j - \log\left(\sum_{k=1}^{J} \exp(\mathbf{x}_i^\top \bb_k)\right) \right]
+    \label{eq:multinom-loglik}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+The multinomial PMF:
+\begin{equation}
+    P(\mathbf{y}_i \mid \pp_i) = \prod_{j=1}^{J} \pi_{ij}^{y_{ij}}
+\end{equation}
+
+Log-likelihood for observation $i$:
+\begin{equation}
+    \ell_i = \sum_{j=1}^{J} y_{ij} \log(\pi_{ij})
+\end{equation}
+
+Substituting the softmax formula:
+\begin{align}
+    \ell_i &= \sum_{j=1}^{J} y_{ij} \log\left(\frac{\exp(\mathbf{x}_i^\top \bb_j)}{\sum_{k=1}^{J} \exp(\mathbf{x}_i^\top \bb_k)}\right) \\
+    &= \sum_{j=1}^{J} y_{ij} \left[ \mathbf{x}_i^\top \bb_j - \log\left(\sum_{k=1}^{J} \exp(\mathbf{x}_i^\top \bb_k)\right) \right]
+\end{align}
+
+Since $\sum_j y_{ij} = 1$ (exactly one category per observation):
+\begin{equation}
+    \ell_i = \sum_{j=1}^{J} y_{ij} \mathbf{x}_i^\top \bb_j - \log\left(\sum_{k=1}^{J} \exp(\mathbf{x}_i^\top \bb_k)\right)
+\end{equation}
+\end{proof}
+
+\subsection{Score Equations}
+
+\begin{theorem}[Multinomial Score]
+The score with respect to $\bb_j$ (for $j = 1, \ldots, J-1$):
+\begin{equation}
+    \frac{\partial \ell}{\partial \bb_j} = \sum_{i=1}^{n} (y_{ij} - \pi_{ij}) \mathbf{x}_i = \X^\top (\y_j - \pp_j)
+    \label{eq:multinom-score}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+\textbf{Step 1: Differentiate.}
+\begin{equation}
+    \frac{\partial \ell}{\partial \bb_j} = \sum_{i=1}^{n} \left[ y_{ij} \mathbf{x}_i - \frac{\exp(\mathbf{x}_i^\top \bb_j) \mathbf{x}_i}{\sum_{k=1}^{J} \exp(\mathbf{x}_i^\top \bb_k)} \right]
+\end{equation}
+
+\textbf{Step 2: Recognize softmax.}
+\begin{equation}
+    \frac{\partial \ell}{\partial \bb_j} = \sum_{i=1}^{n} (y_{ij} - \pi_{ij}) \mathbf{x}_i
+\end{equation}
+
+This has the same elegant form as the binary case.
+\end{proof}
+
+\subsection{Variance-Covariance Structure}
+
+\begin{theorem}[Multinomial Variance]
+For observation $i$ with $\mathbf{Y}_i \sim \text{Multinomial}(1, \pp_i)$:
+\begin{equation}
+    \Cov(Y_{ij}, Y_{ik}) = \begin{cases}
+        \pi_{ij}(1-\pi_{ij}) & \text{if } j = k \\
+        -\pi_{ij}\pi_{ik} & \text{if } j \neq k
+    \end{cases}
+    \label{eq:multinom-cov}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+\textbf{Case $j = k$:}
+Since $Y_{ij} \sim \text{Bernoulli}(\pi_{ij})$ marginally:
+\begin{equation}
+    \Var(Y_{ij}) = \pi_{ij}(1-\pi_{ij})
+\end{equation}
+
+\textbf{Case $j \neq k$:}
+\begin{equation}
+    \Cov(Y_{ij}, Y_{ik}) = \E[Y_{ij}Y_{ik}] - \E[Y_{ij}]\E[Y_{ik}]
+\end{equation}
+Since $Y_{ij}$ and $Y_{ik}$ cannot both be 1 (mutually exclusive categories), $Y_{ij}Y_{ik} = 0$ always:
+\begin{equation}
+    \Cov(Y_{ij}, Y_{ik}) = 0 - \pi_{ij}\pi_{ik} = -\pi_{ij}\pi_{ik}
+\end{equation}
+\end{proof}
+
+In matrix form:
+\begin{equation}
+    \boldsymbol{\Sigma}_i = \diag(\pp_i) - \pp_i\pp_i^\top
+\end{equation}
+
+\subsection{Fisher Information for Multinomial}
+
+The Fisher information has a block structure with blocks of size $(p+1) \times (p+1)$:
+
+\begin{theorem}[Multinomial Fisher Information Blocks]
+For $j, k \in \{1, \ldots, J-1\}$:
+\begin{equation}
+    \I_{jk} = \sum_{i=1}^{n} \pi_{ij}(\delta_{jk} - \pi_{ik}) \mathbf{x}_i \mathbf{x}_i^\top
+    \label{eq:multinom-fisher}
+\end{equation}
+where $\delta_{jk}$ is the Kronecker delta.
+\end{theorem}
+
+\begin{proof}
+The Hessian is:
+\begin{align}
+    \frac{\partial^2 \ell}{\partial \bb_j \partial \bb_k^\top} &= -\sum_{i=1}^{n} \frac{\partial \pi_{ij}}{\partial \bb_k^\top} \mathbf{x}_i
+\end{align}
+
+For the softmax gradient:
+\begin{equation}
+    \frac{\partial \pi_{ij}}{\partial \bb_k^\top} = \pi_{ij}(\delta_{jk} - \pi_{ik}) \mathbf{x}_i^\top
+\end{equation}
+
+Therefore:
+\begin{equation}
+    \frac{\partial^2 \ell}{\partial \bb_j \partial \bb_k^\top} = -\sum_{i=1}^{n} \pi_{ij}(\delta_{jk} - \pi_{ik}) \mathbf{x}_i \mathbf{x}_i^\top
+\end{equation}
+
+The Fisher information is the negative of this.
+\end{proof}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conditional Logistic Regression}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Motivation: Matched Data}
+
+In horse racing, we have \textbf{matched data}: exactly one horse wins per race. The conditional logistic model (McFadden's choice model) conditions on this constraint.
+
+\subsection{Model Specification}
+
+For race $i$ with $J_i$ horses:
+\begin{equation}
+    P(Y_i = j \mid \text{one horse wins}) = \frac{\exp(\mathbf{x}_{ij}^\top \bb)}{\sum_{k=1}^{J_i} \exp(\mathbf{x}_{ik}^\top \bb)}
+    \label{eq:conditional-logit}
+\end{equation}
+
+\textbf{Key differences from multinomial logit:}
+\begin{itemize}
+    \item Covariates $\mathbf{x}_{ij}$ vary by \textbf{both} race $i$ and horse $j$
+    \item Single coefficient vector $\bb$ (not $J-1$ vectors)
+    \item No intercept (absorbed by conditioning)
+\end{itemize}
+
+\subsection{Conditional Log-Likelihood}
+
+\begin{theorem}[Conditional Log-Likelihood]
+\begin{equation}
+    \ell_c(\bb) = \sum_{i=1}^{n} \left[ \mathbf{x}_{i,w_i}^\top \bb - \log\left(\sum_{j=1}^{J_i} \exp(\mathbf{x}_{ij}^\top \bb)\right) \right]
+    \label{eq:cond-loglik}
+\end{equation}
+where $w_i$ is the index of the winner in race $i$.
+\end{theorem}
+
+\begin{proof}
+The conditional likelihood for race $i$:
+\begin{equation}
+    L_{c,i}(\bb) = P(Y_i = w_i) = \frac{\exp(\mathbf{x}_{i,w_i}^\top \bb)}{\sum_{j=1}^{J_i} \exp(\mathbf{x}_{ij}^\top \bb)}
+\end{equation}
+
+Taking logarithms and summing over races:
+\begin{equation}
+    \ell_c(\bb) = \sum_{i=1}^{n} \left[ \mathbf{x}_{i,w_i}^\top \bb - \log\left(\sum_{j=1}^{J_i} \exp(\mathbf{x}_{ij}^\top \bb)\right) \right]
+\end{equation}
+\end{proof}
+
+\subsection{Connection to Cox Proportional Hazards}
+
+\begin{theorem}[Equivalence]
+The conditional logistic regression likelihood is mathematically identical to the partial likelihood in Cox proportional hazards regression.
+\end{theorem}
+
+\begin{proof}[Sketch]
+In survival analysis, at event time $t_i$, the partial likelihood contribution is:
+\begin{equation}
+    L_i^{\text{Cox}}(\bb) = \frac{\exp(\mathbf{x}_{(i)}^\top \bb)}{\sum_{j \in \mathcal{R}_i} \exp(\mathbf{x}_j^\top \bb)}
+\end{equation}
+where $\mathcal{R}_i$ is the risk set at time $t_i$.
+
+The race corresponds to a risk set, and the winner corresponds to the individual experiencing the event. The mathematical forms are identical.
+\end{proof}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Model Diagnostics}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Deviance}
+
+\begin{definition}[Deviance]
+The deviance measures the discrepancy between the fitted model and the saturated model:
+\begin{equation}
+    D = 2[\ell_{\text{saturated}} - \ell_{\text{fitted}}]
+\end{equation}
+\end{definition}
+
+\subsubsection{Binary Logistic Deviance}
+
+\begin{theorem}[Binary Deviance Formula]
+\begin{equation}
+    D = -2 \sum_{i=1}^{n} \left[ y_i \log(\hat{\pi}_i) + (1-y_i) \log(1-\hat{\pi}_i) \right]
+    \label{eq:binary-deviance}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+The saturated model has $\hat{\pi}_i^{\text{sat}} = y_i$, so:
+\begin{equation}
+    \ell_{\text{sat}} = \sum_{i=1}^{n} [y_i \log y_i + (1-y_i)\log(1-y_i)]
+\end{equation}
+
+Using the convention $0 \log 0 = 0$, $\ell_{\text{sat}} = 0$.
+
+The fitted log-likelihood is:
+\begin{equation}
+    \ell_{\text{fitted}} = \sum_{i=1}^{n} [y_i \log \hat{\pi}_i + (1-y_i)\log(1-\hat{\pi}_i)]
+\end{equation}
+
+Therefore:
+\begin{equation}
+    D = 2(0 - \ell_{\text{fitted}}) = -2\ell_{\text{fitted}}
+\end{equation}
+\end{proof}
+
+\subsubsection{Multinomial Deviance}
+
+\begin{equation}
+    D = 2 \sum_{i=1}^{n} \sum_{j=1}^{J} y_{ij} \log\frac{y_{ij}}{\hat{\pi}_{ij}}
+\end{equation}
+
+\subsection{Pearson Chi-Square Statistic}
+
+\begin{definition}
+\begin{equation}
+    X^2 = \sum_{i=1}^{n} \frac{(y_i - \hat{\pi}_i)^2}{\hat{\pi}_i(1-\hat{\pi}_i)}
+\end{equation}
+\end{definition}
+
+\subsection{Residuals}
+
+\subsubsection{Pearson Residuals}
+
+\begin{equation}
+    r_i^P = \frac{y_i - \hat{\pi}_i}{\sqrt{\hat{\pi}_i(1-\hat{\pi}_i)}}
+    \label{eq:pearson-resid}
+\end{equation}
+
+Property: $\sum_i (r_i^P)^2 = X^2$
+
+\subsubsection{Deviance Residuals}
+
+\begin{equation}
+    r_i^D = \sign(y_i - \hat{\pi}_i) \sqrt{d_i}
+    \label{eq:deviance-resid}
+\end{equation}
+
+where:
+\begin{equation}
+    d_i = 2\left[ y_i \log\frac{y_i}{\hat{\pi}_i} + (1-y_i) \log\frac{1-y_i}{1-\hat{\pi}_i} \right]
+\end{equation}
+
+\subsubsection{Standardized Residuals}
+
+\begin{equation}
+    r_i^{PS} = \frac{y_i - \hat{\pi}_i}{\sqrt{\hat{\pi}_i(1-\hat{\pi}_i)(1-h_{ii})}}
+    \label{eq:std-resid}
+\end{equation}
+
+where $h_{ii}$ is the leverage (diagonal of the hat matrix):
+\begin{equation}
+    \mathbf{H} = \W^{1/2} \X (\X^\top \W \X)^{-1} \X^\top \W^{1/2}
+\end{equation}
+
+\subsection{Influence Diagnostics}
+
+\subsubsection{Cook's Distance Analog}
+
+\begin{equation}
+    D_i = \frac{(r_i^{PS})^2 h_{ii}}{p(1-h_{ii})}
+\end{equation}
+
+\subsubsection{Hosmer-Lemeshow Test}
+
+\begin{enumerate}
+    \item Sort observations by $\hat{\pi}_i$
+    \item Group into $G$ groups (typically 10)
+    \item Compute:
+    \begin{equation}
+        \hat{C} = \sum_{g=1}^{G} \frac{(O_g - E_g)^2}{E_g(1 - E_g/n_g)}
+    \end{equation}
+    where $O_g = \sum_{i \in g} y_i$ and $E_g = \sum_{i \in g} \hat{\pi}_i$
+\end{enumerate}
+
+Under $H_0$ (adequate fit): $\hat{C} \stackrel{\cdot}{\sim} \chi^2_{G-2}$
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Numerical Stability}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Log-Sum-Exp Trick}
+
+\begin{theorem}[Numerically Stable Softmax]
+To avoid overflow when computing:
+\begin{equation}
+    \log\left(\sum_{j=1}^{J} e^{\eta_j}\right)
+\end{equation}
+
+Use:
+\begin{equation}
+    \log\left(\sum_{j=1}^{J} e^{\eta_j}\right) = m + \log\left(\sum_{j=1}^{J} e^{\eta_j - m}\right)
+    \label{eq:logsumexp}
+\end{equation}
+where $m = \max_j \eta_j$.
+\end{theorem}
+
+\begin{proof}
+\begin{align}
+    \log\left(\sum_{j=1}^{J} e^{\eta_j}\right) &= \log\left(e^m \sum_{j=1}^{J} e^{\eta_j - m}\right) \\
+    &= m + \log\left(\sum_{j=1}^{J} e^{\eta_j - m}\right)
+\end{align}
+
+Now $\eta_j - m \leq 0$ for all $j$, so $e^{\eta_j - m} \in (0, 1]$, preventing overflow.
+\end{proof}
+
+\subsection{Handling Complete Separation}
+
+Solutions for when MLE does not exist:
+\begin{enumerate}
+    \item \textbf{Ridge regularization}: Add $\lambda\|\bb\|_2^2$ penalty
+    \item \textbf{Firth's bias-reduced estimation}: Add Jeffreys prior
+    \item \textbf{Bayesian approach}: Proper priors ensure finite posterior
+    \item \textbf{Linear predictor clipping}: Bound $\eta \in [-M, M]$ for large $M$
+\end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Implementation for Race Simulation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{State Vector}
+
+The covariate vector for horse $j$ at time $t$:
+\begin{equation}
+    \mathbf{x}_{jt} = \begin{pmatrix} 1 \\ d_{jt} \\ v_{jt} \\ a_{jt} \\ p_{jt} \end{pmatrix}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $d_{jt}$ = remaining distance to finish (normalized)
+    \item $v_{jt}$ = current velocity
+    \item $a_{jt}$ = acceleration
+    \item $p_{jt}$ = track position indicator
+\end{itemize}
+
+\subsection{Cumulative Data Structure}
+
+Accumulate observations over time:
+\begin{equation}
+    \mathcal{D}_T = \{(\mathbf{x}_{jt}, y_{jt}) : j = 1, \ldots, J; \, t = 1, \ldots, T\}
+\end{equation}
+
+where $y_{jt} = \mathbbm{1}(\text{horse } j \text{ eventually wins})$.
+
+\subsection{R Implementation}
+
+\begin{lstlisting}[caption={Core IRLS for Binary Logistic Regression}]
+irls_logistic <- function(X, y, lambda = 0.5, tol = 1e-8, maxiter = 25) {
+  beta <- rep(0, ncol(X))
+  
+  for (iter in seq_len(maxiter)) {
+    eta <- X %*% beta
+    eta <- pmax(pmin(eta, 20), -20)  # Clip for stability
+    pi <- plogis(eta)
+    
+    W <- diag(as.vector(pi * (1 - pi)))
+    z <- eta + (y - pi) / (pi * (1 - pi))
+    
+    # Ridge regularization
+    XtWX <- t(X) %*% W %*% X + lambda * diag(ncol(X))
+    XtWz <- t(X) %*% W %*% z
+    
+    beta_new <- solve(XtWX, XtWz)
+    
+    if (max(abs(beta_new - beta)) < tol) break
+    beta <- beta_new
+  }
+  
+  list(
+    coefficients = as.vector(beta),
+    fitted = as.vector(plogis(X %*% beta)),
+    vcov = solve(XtWX),
+    iterations = iter,
+    converged = iter < maxiter
+  )
+}
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Numerically Stable Softmax}]
+softmax <- function(eta) {
+  eta_max <- apply(eta, 1, max)
+  exp_eta <- exp(eta - eta_max)
+  exp_eta / rowSums(exp_eta)
+}
+\end{lstlisting}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Asymptotic Theory}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Asymptotic Normality of MLE}
+
+\begin{theorem}[Asymptotic Distribution]
+Under regularity conditions, the MLE $\hat{\bb}$ satisfies:
+\begin{equation}
+    \sqrt{n}(\hat{\bb} - \bb_0) \xrightarrow{d} \mathcal{N}\left(\mathbf{0}, \I^{-1}(\bb_0)\right)
+\end{equation}
+where $\bb_0$ is the true parameter value.
+\end{theorem}
+
+\subsection{Standard Errors}
+
+Standard errors are obtained from:
+\begin{equation}
+    \widehat{\Var}(\hat{\bb}) = \I^{-1}(\hat{\bb}) = (\X^\top \hat{\W} \X)^{-1}
+\end{equation}
+
+Individual standard errors:
+\begin{equation}
+    \text{SE}(\hat{\beta}_j) = \sqrt{[\I^{-1}(\hat{\bb})]_{jj}}
+\end{equation}
+
+\subsection{Wald Tests}
+
+For testing $H_0: \beta_j = 0$:
+\begin{equation}
+    z = \frac{\hat{\beta}_j}{\text{SE}(\hat{\beta}_j)} \stackrel{H_0}{\sim} \mathcal{N}(0, 1)
+\end{equation}
+
+For multiple parameters, the Wald statistic:
+\begin{equation}
+    W = (\mathbf{C}\hat{\bb})^\top [\mathbf{C} \I^{-1}(\hat{\bb}) \mathbf{C}^\top]^{-1} (\mathbf{C}\hat{\bb}) \stackrel{H_0}{\sim} \chi^2_r
+\end{equation}
+where $\mathbf{C}$ is an $r \times (p+1)$ contrast matrix.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{References}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{enumerate}
+    \item Agresti, A. (2013). \textit{Categorical Data Analysis} (3rd ed.). Wiley.
+    \item McCullagh, P., \& Nelder, J.A. (1989). \textit{Generalized Linear Models} (2nd ed.). Chapman \& Hall.
+    \item Hosmer, D.W., Lemeshow, S., \& Sturdivant, R.X. (2013). \textit{Applied Logistic Regression} (3rd ed.). Wiley.
+    \item McFadden, D. (1974). Conditional logit analysis of qualitative choice behavior. In P. Zarembka (Ed.), \textit{Frontiers in Econometrics}. Academic Press.
+    \item Cox, D.R. (1972). Regression models and life-tables. \textit{Journal of the Royal Statistical Society: Series B}, 34(2), 187--202.
+    \item Firth, D. (1993). Bias reduction of maximum likelihood estimates. \textit{Biometrika}, 80(1), 27--38.
+\end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\appendix
+\section{Derivation Details}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Derivative of the Logistic Function}
+
+\begin{lemma}
+For $\sigma(\eta) = \frac{1}{1+e^{-\eta}}$:
+\begin{equation}
+    \frac{d\sigma}{d\eta} = \sigma(\eta)(1-\sigma(\eta))
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+\begin{align}
+    \frac{d\sigma}{d\eta} &= \frac{d}{d\eta}\left(\frac{1}{1+e^{-\eta}}\right) \\
+    &= \frac{e^{-\eta}}{(1+e^{-\eta})^2} \\
+    &= \frac{1}{1+e^{-\eta}} \cdot \frac{e^{-\eta}}{1+e^{-\eta}} \\
+    &= \sigma(\eta) \cdot \frac{1}{1+e^\eta} \\
+    &= \sigma(\eta)(1-\sigma(\eta))
+\end{align}
+\end{proof}
+
+\subsection{Softmax Gradient}
+
+\begin{lemma}
+For $\pi_j = \frac{e^{\eta_j}}{\sum_k e^{\eta_k}}$:
+\begin{equation}
+    \frac{\partial \pi_j}{\partial \eta_k} = \pi_j(\delta_{jk} - \pi_k)
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+Let $S = \sum_k e^{\eta_k}$.
+
+\textbf{Case $j = k$:}
+\begin{align}
+    \frac{\partial \pi_j}{\partial \eta_j} &= \frac{e^{\eta_j} S - e^{\eta_j} e^{\eta_j}}{S^2} \\
+    &= \frac{e^{\eta_j}}{S} - \frac{e^{2\eta_j}}{S^2} \\
+    &= \pi_j - \pi_j^2 = \pi_j(1-\pi_j)
+\end{align}
+
+\textbf{Case $j \neq k$:}
+\begin{align}
+    \frac{\partial \pi_j}{\partial \eta_k} &= \frac{0 \cdot S - e^{\eta_j} e^{\eta_k}}{S^2} \\
+    &= -\frac{e^{\eta_j}}{S} \cdot \frac{e^{\eta_k}}{S} = -\pi_j \pi_k
+\end{align}
+
+Combining:
+\begin{equation}
+    \frac{\partial \pi_j}{\partial \eta_k} = \pi_j(\delta_{jk} - \pi_k)
+\end{equation}
+\end{proof}
+
+\subsection{Information Identity}
+
+\begin{theorem}[Score Variance Equals Fisher Information]
+Under regularity conditions:
+\begin{equation}
+    \E\left[\mathbf{S}(\bb)\mathbf{S}(\bb)^\top\right] = -\E\left[\frac{\partial^2 \ell}{\partial \bb \partial \bb^\top}\right]
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Since $\int f(y;\bb) \dd y = 1$, differentiate both sides:
+\begin{equation}
+    \int \frac{\partial \log f}{\partial \bb} f(y;\bb) \dd y = 0
+\end{equation}
+
+Thus $\E[\mathbf{S}(\bb)] = \mathbf{0}$.
+
+Differentiate again:
+\begin{equation}
+    \int \left[\frac{\partial^2 \log f}{\partial \bb \partial \bb^\top} + \frac{\partial \log f}{\partial \bb}\frac{\partial \log f}{\partial \bb^\top}\right] f \dd y = 0
+\end{equation}
+
+Therefore:
+\begin{equation}
+    \E\left[\frac{\partial^2 \ell}{\partial \bb \partial \bb^\top}\right] + \E\left[\mathbf{S}\mathbf{S}^\top\right] = 0
+\end{equation}
+\end{proof}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\end{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,4 +1,4 @@
-# Generalized Linear Models for Race Simulation: Technical Specification
+**# Generalized Linear Models for Race Simulation: Technical Specification
 
 ## Table of Contents
 1. [Quick Start](#quick-start)
@@ -607,4 +607,4 @@ multinom.log.lik <- function(beta.vec, X, Y, J) {
 2. McCullagh, P., & Nelder, J. A. (1989). *Generalized Linear Models* (2nd ed.). Chapman & Hall.
 3. Hosmer, D. W., Lemeshow, S., & Sturdivant, R. X. (2013). *Applied Logistic Regression* (3rd ed.). Wiley.
 4. McFadden, D. (1974). Conditional logit analysis of qualitative choice behavior. In P. Zarembka (Ed.), *Frontiers in Econometrics*. Academic Press.
-5. Cox, D. R. (1972). Regression models and life-tables. *Journal of the Royal Statistical Society: Series B (Methodological)*, 34(2), 187–202.
+5. Cox, D. R. (1972). Regression models and life-tables. *Journal of the Royal Statistical Society: Series B (Methodological)*, 34(2), 187–202.**
