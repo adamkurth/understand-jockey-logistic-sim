@@ -583,7 +583,34 @@ Using softmax on inverse remaining distances:
           plot.background = element_rect(fill = "#16213e", color = NA),
           panel.background = element_rect(fill = "#16213e", color = NA),
           legend.position = "none"
-        )
+        ) -> base_plot
+      
+      # Add winner overlay if race is complete
+      if (t >= rv$race_data$n_frames) {
+        winner <- rv$race_data$winner
+        winner_color <- rv$colors[winner]
+        
+        base_plot <- base_plot +
+          # Semi-transparent overlay
+          annotate("rect", xmin = -1.4, xmax = 1.4, ymin = -0.9, ymax = 0.9,
+                   fill = "#000000", alpha = 0.6) +
+          # Winner banner background
+          annotate("rect", xmin = -1.2, xmax = 1.2, ymin = -0.35, ymax = 0.35,
+                   fill = "#16213e", color = winner_color, size = 3, alpha = 0.95) +
+          # Trophy emoji and text
+          annotate("text", x = 0, y = 0.15, 
+                   label = "🏆 WINNER 🏆",
+                   color = "#FFD700", size = 10, fontface = "bold") +
+          annotate("text", x = 0, y = -0.1,
+                   label = sprintf("Horse %d", winner),
+                   color = winner_color, size = 14, fontface = "bold") +
+          # Final positions subtitle
+          annotate("text", x = 0, y = -0.28,
+                   label = "Click Reset to race again",
+                   color = "#888", size = 4)
+      }
+      
+      base_plot
     }
   }, bg = "#16213e")
   
@@ -642,17 +669,30 @@ Using softmax on inverse remaining distances:
     # Current positions
     positions <- rv$race_data$positions[t, ]
     ranks <- rank(-positions)
+    race_finished <- t >= rv$race_data$n_frames
+    winner_horse <- which.max(positions)
     
     # Create leaderboard entries
     entries <- lapply(order(ranks), function(i) {
+      is_winner <- race_finished && (i == winner_horse)
       div(
         class = "horse-row",
-        style = sprintf("background-color: %s33;", rv$colors[i]),
+        style = sprintf("background-color: %s%s; %s", 
+                        rv$colors[i], 
+                        ifelse(is_winner, "66", "33"),
+                        ifelse(is_winner, "border: 3px solid gold; box-shadow: 0 0 10px gold;", "")),
         span(class = "horse-name", 
-             style = sprintf("color: %s;", rv$colors[i]),
-             sprintf("Horse %d", i)),
-        span(sprintf("Rank: %d", ranks[i]), 
-             style = "flex-grow: 1; text-align: center;"),
+             style = sprintf("color: %s; font-weight: %s;", 
+                             rv$colors[i],
+                             ifelse(is_winner, "bold", "normal")),
+             sprintf("%s Horse %d", ifelse(is_winner, "🏆", ""), i)),
+        span(sprintf("%s", ifelse(race_finished, 
+                                   ifelse(ranks[i] == 1, "🥇 1st", 
+                                          ifelse(ranks[i] == 2, "🥈 2nd",
+                                                 ifelse(ranks[i] == 3, "🥉 3rd",
+                                                        sprintf("%dth", ranks[i])))),
+                                   sprintf("Rank: %d", ranks[i]))), 
+             style = "flex-grow: 1; text-align: center; font-weight: bold;"),
         span(class = "prob-value",
              sprintf("%.1f%%", rv$probabilities[i] * 100))
       )
