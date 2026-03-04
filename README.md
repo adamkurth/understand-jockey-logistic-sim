@@ -86,11 +86,11 @@ $$f(y_i; \pi_i) = \pi_i^{y_i}(1 - \pi_i)^{1 - y_i}$$
 
 Can be written in exponential family form:
 
-$$f(y_i; \theta_i) = \exp\left\{ y_i \theta_i - \log(1 + e^{\theta_i}) \right\}$$
+$$f(y_i; \theta_i) = \exp\left(y_i \theta_i - \log(1 + e^{\theta_i}) \right)$$
 
 where the **natural parameter** is:
 
-$$\theta_i = \log\left(\frac{\pi_i}{1 - \pi_i}\right)$$
+$$\theta_i = \log \left(\frac{\pi_i}{1 - \pi_i}\right)$$
 
 This reveals why the logit is the **canonical link function** — it directly maps the linear predictor to the natural parameter.
 
